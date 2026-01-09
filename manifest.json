@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Filler Skip",
+  "version": "1.0",
+  "description": "Skips anime filler (probably)",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Filler Skip"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.crunchyroll.com/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "host_permissions": [
+    "*://*.crunchyroll.com/*"
+  ]
+}
