@@ -1,113 +1,5 @@
 // Popup script for Filler Skip extension
 
-// Cache for shows list
-let showsCache = null;
-
-// Fuzzy matching function using Levenshtein distance
-function fuzzyMatch(searchTitle, targetTitle) {
-  const normalize = (str) => str.toLowerCase().replace(/[^\w\s]/g, '').trim();
-  const search = normalize(searchTitle);
-  const target = normalize(targetTitle);
-  
-  // Exact match
-  if (search === target) return 1.0;
-  
-  // Check if search is contained in target or vice versa
-  if (target.includes(search) || search.includes(target)) {
-    return 0.9;
-  }
-  
-  // Calculate Levenshtein distance
-  const distance = levenshteinDistance(search, target);
-  const maxLen = Math.max(search.length, target.length);
-  const similarity = 1 - (distance / maxLen);
-  
-  return similarity;
-}
-
-// Levenshtein distance calculation
-function levenshteinDistance(str1, str2) {
-  const matrix = [];
-  const len1 = str1.length;
-  const len2 = str2.length;
-  
-  for (let i = 0; i <= len1; i++) {
-    matrix[i] = [i];
-  }
-  
-  for (let j = 0; j <= len2; j++) {
-    matrix[0][j] = j;
-  }
-  
-  for (let i = 1; i <= len1; i++) {
-    for (let j = 1; j <= len2; j++) {
-      if (str1[i - 1] === str2[j - 1]) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j - 1] + 1
-        );
-      }
-    }
-  }
-  
-  return matrix[len1][len2];
-}
-
-// Find best matching show
-function findBestMatch(title, shows) {
-  if (!shows || shows.length === 0) return null;
-  
-  let bestMatch = null;
-  let bestScore = 0;
-  
-  for (const show of shows) {
-    const score = fuzzyMatch(title, show.title);
-    if (score > bestScore) {
-      bestScore = score;
-      bestMatch = show;
-    }
-  }
-  
-  // Only return match if similarity is above threshold (0.5)
-  return bestScore >= 0.5 ? bestMatch : null;
-}
-
-// Fetch shows list from animefillerlist.com
-async function fetchShowsList() {
-  if (showsCache) {
-    return showsCache;
-  }
-  
-  try {
-    const response = await fetch('https://www.animefillerlist.com/shows');
-    const html = await response.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    
-    const shows = [];
-    const links = doc.querySelectorAll('a[href^="/shows/"]');
-    
-    links.forEach(link => {
-      const title = link.textContent.trim();
-      const href = link.getAttribute('href');
-      if (title && href) {
-        const url = href.startsWith('http') ? href : `https://www.animefillerlist.com${href}`;
-        shows.push({ title, url });
-      }
-    });
-    
-    showsCache = shows;
-    console.log(`Loaded ${shows.length} shows from animefillerlist.com`);
-    return shows;
-  } catch (error) {
-    console.error('Error fetching shows list:', error);
-    return [];
-  }
-}
-
 document.addEventListener('DOMContentLoaded', function() {
   console.log('Filler Skip popup loaded!');
 
@@ -131,18 +23,85 @@ document.addEventListener('DOMContentLoaded', function() {
             const title = results[0].result;
             const animeTitleDiv = document.getElementById('animeTitle');
             if (animeTitleDiv) {
-              // Fetch shows list and find match
-              const shows = await fetchShowsList();
-              const match = findBestMatch(title, shows);
-              
-              if (match) {
-                animeTitleDiv.innerHTML = `<strong>Watching:</strong> <a href="${match.url}" target="_blank">${title}</a>`;
-                console.log(`Matched "${title}" to "${match.title}" (${match.url})`);
+              // Read filler data from chrome.storage (populated by content.js)
+              const storageKey = `filler_${title.toLowerCase().replace(/[^\w]/g, '_')}`;
+              const result = await chrome.storage.local.get(storageKey);
+
+              if (result[storageKey]) {
+                const fillerData = result[storageKey];
+                const fillerEpisodes = fillerData.fillerEpisodes;
+                const url = fillerData.url;
+
+                // Display anime title and filler episodes
+                let displayHTML = `<strong>Watching:</strong> <a href="${url}" target="_blank">${title}</a>`;
+
+                if (fillerEpisodes.length > 0) {
+                  // Show first 10 filler episodes as proof
+                  const firstFew = fillerEpisodes.slice(0, 10);
+                  const displayEpisodes = firstFew.join(', ');
+                  const moreText = fillerEpisodes.length > 10 ? ` (+${fillerEpisodes.length - 10} more)` : '';
+                  displayHTML += `<br><strong>Filler Episodes:</strong> ${displayEpisodes}${moreText}`;
+                  console.log(`Found ${fillerEpisodes.length} filler episodes:`, fillerEpisodes);
+                } else {
+                  displayHTML += `<br><em>No filler episodes found</em>`;
+                }
+
+                animeTitleDiv.innerHTML = displayHTML;
               } else {
-                animeTitleDiv.innerHTML = `<strong>Watching:</strong> ${title}`;
-                console.log(`No match found for "${title}"`);
+                // No data yet - content script will fetch it
+                animeTitleDiv.innerHTML = `<strong>Watching:</strong> ${title}<br><em>Loading filler data...</em>`;
               }
+
               animeTitleDiv.classList.add('show');
+            }
+          }
+        });
+      }
+    }
+  });
+
+  // Listen for storage changes (when content script fetches new filler data)
+  chrome.storage.onChanged.addListener(async (changes, areaName) => {
+    if (areaName === 'local' && changes.current_anime) {
+      console.log('Filler data updated, refreshing popup...');
+
+      // Get current tab info to update display
+      const tabs = await chrome.tabs.query({active: true, currentWindow: true});
+      const currentTab = tabs[0];
+
+      if (currentTab.url && currentTab.url.includes('crunchyroll.com/watch')) {
+        chrome.scripting.executeScript({
+          target: { tabId: currentTab.id },
+          func: () => {
+            const titleElement = document.querySelector('[data-t="show-title-link"] h4');
+            return titleElement ? titleElement.textContent.trim() : null;
+          }
+        }, async (results) => {
+          if (results && results[0] && results[0].result) {
+            const title = results[0].result;
+            const storageKey = `filler_${title.toLowerCase().replace(/[^\w]/g, '_')}`;
+            const result = await chrome.storage.local.get(storageKey);
+
+            if (result[storageKey]) {
+              const fillerData = result[storageKey];
+              const fillerEpisodes = fillerData.fillerEpisodes;
+              const url = fillerData.url;
+
+              const animeTitleDiv = document.getElementById('animeTitle');
+              if (animeTitleDiv) {
+                let displayHTML = `<strong>Watching:</strong> <a href="${url}" target="_blank">${title}</a>`;
+
+                if (fillerEpisodes.length > 0) {
+                  const firstFew = fillerEpisodes.slice(0, 10);
+                  const displayEpisodes = firstFew.join(', ');
+                  const moreText = fillerEpisodes.length > 10 ? ` (+${fillerEpisodes.length - 10} more)` : '';
+                  displayHTML += `<br><strong>Filler Episodes:</strong> ${displayEpisodes}${moreText}`;
+                } else {
+                  displayHTML += `<br><em>No filler episodes found</em>`;
+                }
+
+                animeTitleDiv.innerHTML = displayHTML;
+              }
             }
           }
         });
@@ -158,4 +117,3 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 });
-

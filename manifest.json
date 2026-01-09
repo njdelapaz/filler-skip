@@ -5,7 +5,8 @@
   "description": "Skips anime filler (probably)",
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "storage"
   ],
   "action": {
     "default_popup": "popup.html",
