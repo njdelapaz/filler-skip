@@ -18,6 +18,7 @@
     }
   ],
   "host_permissions": [
-    "*://*.crunchyroll.com/*"
+    "*://*.crunchyroll.com/*",
+    "*://*.animefillerlist.com/*"
   ]
 }
