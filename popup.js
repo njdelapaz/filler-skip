@@ -9,4 +9,12 @@ document.addEventListener('DOMContentLoaded', function() {
       console.log('Active on Crunchyroll!');
     }
   });
+
+  // Add click handler for the button
+  const clickButton = document.getElementById('clickButton');
+  if (clickButton) {
+    clickButton.addEventListener('click', function() {
+      alert('clicked');
+    });
+  }
 });
