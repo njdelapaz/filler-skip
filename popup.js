@@ -1,7 +1,64 @@
 // Popup script for Filler Skip extension
 
+// Helper to render anime title and filler episodes with expandable list
+function renderAnimeInfo(animeTitleDiv, title, fillerEpisodes, url) {
+  let displayHTML = `<strong>Watching:</strong> <a href="${url}" target="_blank">${title}</a>`;
+
+  if (fillerEpisodes.length > 0) {
+    if (fillerEpisodes.length > 10) {
+      const firstFew = fillerEpisodes.slice(0, 10).join(', ');
+      const remainingCount = fillerEpisodes.length - 10;
+      const allEpisodes = fillerEpisodes.join(', ');
+
+      displayHTML += `<br><strong>Filler Episodes:</strong> ` +
+        `<span id="episodesShort">${firstFew}</span>` +
+        ` <span id="showAllEpisodes" style="cursor:pointer; color:#f47521; font-size:12px;">(+${remainingCount} more)</span>` +
+        `<span id="episodesFull" style="display:none;">${allEpisodes}</span>`;
+    } else {
+      const displayEpisodes = fillerEpisodes.join(', ');
+      displayHTML += `<br><strong>Filler Episodes:</strong> ${displayEpisodes}`;
+    }
+  } else {
+    displayHTML += `<br><em>No filler episodes found</em>`;
+  }
+
+  animeTitleDiv.innerHTML = displayHTML;
+
+  // Attach click handler to expand the full list, if applicable
+  const showAll = document.getElementById('showAllEpisodes');
+  const episodesShort = document.getElementById('episodesShort');
+  const episodesFull = document.getElementById('episodesFull');
+
+  if (showAll && episodesShort && episodesFull) {
+    showAll.addEventListener('click', (e) => {
+      e.preventDefault();
+      episodesShort.textContent = episodesFull.textContent;
+      showAll.style.display = 'none';
+    });
+  }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   console.log('Filler Skip popup loaded!');
+
+  // Initialize enable/disable auto-skip button
+  const toggleSkipButton = document.getElementById('toggleSkipButton');
+  if (toggleSkipButton) {
+    chrome.storage.local.get('skip_enabled', (result) => {
+      const enabled = result.skip_enabled !== false; // default to true
+      toggleSkipButton.textContent = enabled ? 'Disable Auto-Skip' : 'Enable Auto-Skip';
+    });
+
+    toggleSkipButton.addEventListener('click', () => {
+      chrome.storage.local.get('skip_enabled', (result) => {
+        const current = result.skip_enabled !== false; // default to true
+        const next = !current;
+        chrome.storage.local.set({ skip_enabled: next }, () => {
+          toggleSkipButton.textContent = next ? 'Disable Auto-Skip' : 'Enable Auto-Skip';
+        });
+      });
+    });
+  }
 
   // Check if we're on a Crunchyroll tab
   chrome.tabs.query({active: true, currentWindow: true}, async function(tabs) {
@@ -32,21 +89,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 const fillerEpisodes = fillerData.fillerEpisodes;
                 const url = fillerData.url;
 
-                // Display anime title and filler episodes
-                let displayHTML = `<strong>Watching:</strong> <a href="${url}" target="_blank">${title}</a>`;
-
-                if (fillerEpisodes.length > 0) {
-                  // Show first 10 filler episodes as proof
-                  const firstFew = fillerEpisodes.slice(0, 10);
-                  const displayEpisodes = firstFew.join(', ');
-                  const moreText = fillerEpisodes.length > 10 ? ` (+${fillerEpisodes.length - 10} more)` : '';
-                  displayHTML += `<br><strong>Filler Episodes:</strong> ${displayEpisodes}${moreText}`;
-                  console.log(`Found ${fillerEpisodes.length} filler episodes:`, fillerEpisodes);
-                } else {
-                  displayHTML += `<br><em>No filler episodes found</em>`;
-                }
-
-                animeTitleDiv.innerHTML = displayHTML;
+                console.log(`Found ${fillerEpisodes.length} filler episodes:`, fillerEpisodes);
+                renderAnimeInfo(animeTitleDiv, title, fillerEpisodes, url);
               } else {
                 // No data yet - content script will fetch it
                 animeTitleDiv.innerHTML = `<strong>Watching:</strong> ${title}<br><em>Loading filler data...</em>`;
@@ -89,18 +133,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
               const animeTitleDiv = document.getElementById('animeTitle');
               if (animeTitleDiv) {
-                let displayHTML = `<strong>Watching:</strong> <a href="${url}" target="_blank">${title}</a>`;
-
-                if (fillerEpisodes.length > 0) {
-                  const firstFew = fillerEpisodes.slice(0, 10);
-                  const displayEpisodes = firstFew.join(', ');
-                  const moreText = fillerEpisodes.length > 10 ? ` (+${fillerEpisodes.length - 10} more)` : '';
-                  displayHTML += `<br><strong>Filler Episodes:</strong> ${displayEpisodes}${moreText}`;
-                } else {
-                  displayHTML += `<br><em>No filler episodes found</em>`;
-                }
-
-                animeTitleDiv.innerHTML = displayHTML;
+                renderAnimeInfo(animeTitleDiv, title, fillerEpisodes, url);
               }
             }
           }

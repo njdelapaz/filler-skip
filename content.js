@@ -149,11 +149,11 @@ function showFillerNotification() {
 }
 
 // Skip to next episode
-function skipToNextEpisode() {
+function skipToNextEpisode(attempt = 0) {
   // Find the next episode link
   const nextEpisodeLink = document.querySelector('[data-t="next-episode"] a');
-// print it
-  console.log('Next episode link:', nextEpisodeLink);
+  console.log('Next episode link:', nextEpisodeLink, 'Attempt:', attempt + 1);
+
   if (nextEpisodeLink) {
     const nextEpisodeUrl = nextEpisodeLink.getAttribute('href');
     console.log('Skipping to next episode:', nextEpisodeUrl);
@@ -161,9 +161,16 @@ function skipToNextEpisode() {
     // Navigate to next episode
     if (nextEpisodeUrl) {
       window.location.href = nextEpisodeUrl;
+    } else if (attempt < 20) {
+      // Retry if link exists but href is not yet available
+      setTimeout(() => skipToNextEpisode(attempt + 1), 500);
     }
+  } else if (attempt < 20) {
+    console.log('No next episode found, retrying...');
+    // Retry after a short delay to allow the page to finish rendering
+    setTimeout(() => skipToNextEpisode(attempt + 1), 500);
   } else {
-    console.log('No next episode found');
+    console.log('No next episode found after 20 attempts');
 
     // Update notification to show no next episode
     const notification = document.getElementById('filler-notification');
@@ -193,90 +200,123 @@ async function checkIfFiller() {
   // Give the page a moment to render
   await new Promise(resolve => setTimeout(resolve, 1000));
 
-  // Get anime title
-  const titleElement = document.querySelector('[data-t="show-title-link"] h4');
-  if (!titleElement) {
-    console.log('Could not find anime title element');
-    return;
-  }
-  const animeTitle = titleElement.textContent.trim();
-  console.log(`Anime title: ${animeTitle}`);
+  // Retry loop to wait for title and episode elements to appear
+  const maxAttempts = 20;
+  const retryDelayMs = 500;
 
-  // Get episode number
-  const episodeTitleElement = document.querySelector('h1.title');
-  if (!episodeTitleElement) {
-    console.log('Could not find episode title element');
-    return;
-  }
-  const episodeTitle = episodeTitleElement.textContent.trim();
-  const episodeNumber = extractEpisodeNumber(episodeTitle);
-
-  if (!episodeNumber) {
-    console.log('Could not extract episode number from:', episodeTitle);
-    return;
-  }
-  console.log(`Current episode: ${episodeNumber}`);
-
-  // Check if filler data exists in storage
-  const storageKey = `filler_${animeTitle.toLowerCase().replace(/[^\w]/g, '_')}`;
-  let result = await chrome.storage.local.get(storageKey);
-
-  // If not in storage, fetch it
-  if (!result[storageKey]) {
-    console.log(`No filler data found in storage for "${animeTitle}". Fetching...`);
-
-    // Fetch shows list and find match
-    const shows = await fetchShowsList();
-    const match = findBestMatch(animeTitle, shows);
-
-    // print shows list for debugging
-    console.log('Shows list:', shows);
-
-    if (!match) {
-      console.log(`No match found for "${animeTitle}"`);
+  const attemptCheck = async (attempt) => {
+    // Get anime title
+    const titleElement = document.querySelector('[data-t="show-title-link"] h4');
+    if (!titleElement) {
+      if (attempt < maxAttempts) {
+        console.log('Could not find anime title element, retrying...', attempt + 1);
+        setTimeout(() => attemptCheck(attempt + 1), retryDelayMs);
+      } else {
+        console.log('Could not find anime title element after multiple attempts');
+      }
       return;
     }
-    console.log(`Matched "${animeTitle}" to "${match.title}"`);
+    const animeTitle = titleElement.textContent.trim();
+    console.log(`Anime title: ${animeTitle}`);
 
-    // Fetch filler episodes
-    const fillerEpisodes = await fetchFillerEpisodes(match.url);
+    // Get episode number
+    const episodeTitleElement = document.querySelector('h1.title');
+    if (!episodeTitleElement) {
+      if (attempt < maxAttempts) {
+        console.log('Could not find episode title element, retrying...', attempt + 1);
+        setTimeout(() => attemptCheck(attempt + 1), retryDelayMs);
+      } else {
+        console.log('Could not find episode title element after multiple attempts');
+      }
+      return;
+    }
+    const episodeTitle = episodeTitleElement.textContent.trim();
+    const episodeNumber = extractEpisodeNumber(episodeTitle);
 
-    // Store filler data in chrome.storage
-    await chrome.storage.local.set({
-      [storageKey]: {
+    if (!episodeNumber) {
+      console.log('Could not extract episode number from:', episodeTitle);
+      return;
+    }
+    console.log(`Current episode: ${episodeNumber}`);
+
+    // Check if filler data exists in storage
+    const storageKey = `filler_${animeTitle.toLowerCase().replace(/[^\w]/g, '_')}`;
+    let result = await chrome.storage.local.get(storageKey);
+
+    // If not in storage, fetch it
+    if (!result[storageKey]) {
+      console.log(`No filler data found in storage for "${animeTitle}". Fetching...`);
+
+      // Fetch shows list and find match
+      const shows = await fetchShowsList();
+      const match = findBestMatch(animeTitle, shows);
+
+      // print shows list for debugging
+      console.log('Shows list:', shows);
+
+      if (!match) {
+        console.log(`No match found for "${animeTitle}"`);
+        return;
+      }
+      console.log(`Matched "${animeTitle}" to "${match.title}"`);
+
+      // Fetch filler episodes
+      const fillerEpisodes = await fetchFillerEpisodes(match.url);
+
+      // Store filler data in chrome.storage
+      await chrome.storage.local.set({
+        [storageKey]: {
+          animeTitle: animeTitle,
+          fillerEpisodes: fillerEpisodes,
+          matchedTitle: match.title,
+          url: match.url,
+          timestamp: Date.now()
+        },
+        'current_anime': storageKey
+      });
+      console.log(`Stored filler data for "${animeTitle}" in chrome.storage`);
+
+      // Update result with newly fetched data
+      result[storageKey] = {
         animeTitle: animeTitle,
         fillerEpisodes: fillerEpisodes,
         matchedTitle: match.title,
         url: match.url,
         timestamp: Date.now()
-      },
-      'current_anime': storageKey
-    });
-    console.log(`Stored filler data for "${animeTitle}" in chrome.storage`);
+      };
+    } else {
+      console.log(`Loaded filler data from storage for "${animeTitle}"`);
+    }
 
-    // Update result with newly fetched data
-    result[storageKey] = {
-      animeTitle: animeTitle,
-      fillerEpisodes: fillerEpisodes,
-      matchedTitle: match.title,
-      url: match.url,
-      timestamp: Date.now()
-    };
-  } else {
-    console.log(`Loaded filler data from storage for "${animeTitle}"`);
-  }
+    const fillerData = result[storageKey];
+    if (!fillerData || !Array.isArray(fillerData.fillerEpisodes)) {
+      console.log('Filler data is missing or invalid for key:', storageKey);
+      return;
+    }
 
-  const fillerData = result[storageKey];
-  const fillerEpisodes = fillerData.fillerEpisodes;
-  console.log(`Found ${fillerEpisodes.length} filler episodes`);
+    const fillerEpisodes = fillerData.fillerEpisodes;
+    console.log(`Found ${fillerEpisodes.length} filler episodes`);
 
-  // Check if current episode is filler
-  if (fillerEpisodes.includes(episodeNumber)) {
-    console.log(`Episode ${episodeNumber} is FILLER!`);
-    showFillerNotification();
-  } else {
-    console.log(`Episode ${episodeNumber} is not filler`);
-  }
+    // Check if current episode is filler
+    if (fillerEpisodes.includes(episodeNumber)) {
+      console.log(`Episode ${episodeNumber} is FILLER!`);
+
+      // Check if auto-skip is enabled before skipping
+      const skipSetting = await chrome.storage.local.get('skip_enabled');
+      const skipEnabled = !skipSetting || skipSetting.skip_enabled !== false; // default to true
+
+      if (skipEnabled) {
+        showFillerNotification();
+      } else {
+        console.log('Auto-skip is disabled; not skipping this filler episode.');
+      }
+    } else {
+      console.log(`Episode ${episodeNumber} is not filler`);
+    }
+  };
+
+  // Start first attempt
+  attemptCheck(0);
 }
 
 // Run filler check on page load
