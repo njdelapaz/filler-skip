@@ -161,7 +161,7 @@ function extractEpisodeNumber(titleText) {
   return match ? parseInt(match[1], 10) : null;
 }
 
-// Show filler notification
+// Show filler notification and auto-skip to next episode
 function showFillerNotification() {
   // Check if notification already exists
   if (document.getElementById('filler-notification')) {
@@ -184,9 +184,36 @@ function showFillerNotification() {
     z-index: 10000;
     box-shadow: 0 2px 10px rgba(0,0,0,0.3);
   `;
-  notification.textContent = 'This is filler!';
+  notification.innerHTML = 'This is filler!<br><span style="font-size: 14px;">Skipping...</span>';
   document.body.appendChild(notification);
-  console.log('Filler notification displayed');
+  console.log('Filler notification displayed - skipping immediately');
+
+  // Skip immediately
+  skipToNextEpisode();
+}
+
+// Skip to next episode
+function skipToNextEpisode() {
+  // Find the next episode link
+  const nextEpisodeLink = document.querySelector('[data-t="next-episode"] a');
+
+  if (nextEpisodeLink) {
+    const nextEpisodeUrl = nextEpisodeLink.getAttribute('href');
+    console.log('Skipping to next episode:', nextEpisodeUrl);
+
+    // Navigate to next episode
+    if (nextEpisodeUrl) {
+      window.location.href = nextEpisodeUrl;
+    }
+  } else {
+    console.log('No next episode found');
+
+    // Update notification to show no next episode
+    const notification = document.getElementById('filler-notification');
+    if (notification) {
+      notification.innerHTML = 'This is filler!<br><span style="font-size: 14px;">No next episode available</span>';
+    }
+  }
 }
 
 // Check if current episode is filler
