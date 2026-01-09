@@ -109,11 +109,23 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  // Add click handler for the button
-  const clickButton = document.getElementById('clickButton');
-  if (clickButton) {
-    clickButton.addEventListener('click', function() {
-      alert('clicked');
+  // Add click handler for the clear cache button
+  const clearCacheButton = document.getElementById('clearCacheButton');
+  if (clearCacheButton) {
+    clearCacheButton.addEventListener('click', async function() {
+      // Clear all storage
+      await chrome.storage.local.clear();
+      console.log('Cache cleared!');
+
+      // Update the display
+      const animeTitleDiv = document.getElementById('animeTitle');
+      if (animeTitleDiv) {
+        animeTitleDiv.innerHTML = '<em>Cache cleared! Refresh the page to reload filler data.</em>';
+        animeTitleDiv.classList.add('show');
+      }
+
+      // Show confirmation
+      alert('Cache cleared successfully!');
     });
   }
 });

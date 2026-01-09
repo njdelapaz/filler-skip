@@ -4,25 +4,6 @@ console.log('Filler Skip extension loaded on Crunchyroll!');
 // Cache for shows list
 let showsCache = null;
 
-// Parse episode numbers from strings like "1-5, 10, 15-20"
-function parseEpisodeNumbers(episodeString) {
-  const episodes = new Set();
-  const ranges = episodeString.split(",").map((range) => range.trim());
-
-  ranges.forEach((range) => {
-    if (range.includes("-")) {
-      const [start, end] = range.split("-").map((num) => parseInt(num, 10));
-      for (let i = start; i <= end; i++) {
-        episodes.add(i);
-      }
-    } else {
-      episodes.add(parseInt(range, 10));
-    }
-  });
-
-  return Array.from(episodes).sort((a, b) => a - b);
-}
-
 // Levenshtein distance calculation
 function levenshteinDistance(str1, str2) {
   const matrix = [];
@@ -95,64 +76,39 @@ function findBestMatch(title, shows) {
   return bestScore >= 0.5 ? bestMatch : null;
 }
 
-// Fetch shows list from animefillerlist.com
+// Fetch shows list from background script (to avoid CORS issues)
 async function fetchShowsList() {
   if (showsCache) {
     return showsCache;
   }
 
-  try {
-    const response = await fetch('https://www.animefillerlist.com/shows');
-    const html = await response.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-
-    const shows = [];
-    const links = doc.querySelectorAll('a[href^="/shows/"]');
-
-    links.forEach(link => {
-      const title = link.textContent.trim();
-      const href = link.getAttribute('href');
-      if (title && href) {
-        const url = href.startsWith('http') ? href : `https://www.animefillerlist.com${href}`;
-        shows.push({ title, url });
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ action: 'fetchShowsList' }, (response) => {
+      if (response.error) {
+        console.error('Error fetching shows list:', response.error);
+        reject(response.error);
+      } else {
+        showsCache = response.shows;
+        console.log(`Loaded ${response.shows.length} shows from animefillerlist.com`);
+        resolve(response.shows);
       }
     });
-
-    showsCache = shows;
-    console.log(`Loaded ${shows.length} shows from animefillerlist.com`);
-    return shows;
-  } catch (error) {
-    console.error('Error fetching shows list:', error);
-    return [];
-  }
+  });
 }
 
-// Fetch filler episodes from animefillerlist.com show page
+// Fetch filler episodes from background script (to avoid CORS issues)
 async function fetchFillerEpisodes(url) {
-  try {
-    const response = await fetch(url);
-    const html = await response.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-
-    const fillerDiv = doc.querySelector('.filler');
-    let regularFillerEpisodes = [];
-
-    if (fillerDiv) {
-      const fillerEpisodesElement = fillerDiv.querySelector('.Episodes');
-      if (fillerEpisodesElement) {
-        const fillerEpisodesText = fillerEpisodesElement.textContent;
-        regularFillerEpisodes = parseEpisodeNumbers(fillerEpisodesText);
-        console.log(`Found ${regularFillerEpisodes.length} filler episodes`);
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ action: 'fetchFillerEpisodes', url }, (response) => {
+      if (response.error) {
+        console.error('Error fetching filler episodes:', response.error);
+        reject(response.error);
+      } else {
+        console.log(`Found ${response.episodes.length} filler episodes`);
+        resolve(response.episodes);
       }
-    }
-
-    return regularFillerEpisodes;
-  } catch (error) {
-    console.error('Error fetching filler episodes:', error);
-    return [];
-  }
+    });
+  });
 }
 
 // Extract episode number from title (e.g., "E3 - Title" -> 3)
@@ -196,7 +152,8 @@ function showFillerNotification() {
 function skipToNextEpisode() {
   // Find the next episode link
   const nextEpisodeLink = document.querySelector('[data-t="next-episode"] a');
-
+// print it
+  console.log('Next episode link:', nextEpisodeLink);
   if (nextEpisodeLink) {
     const nextEpisodeUrl = nextEpisodeLink.getAttribute('href');
     console.log('Skipping to next episode:', nextEpisodeUrl);
@@ -271,6 +228,9 @@ async function checkIfFiller() {
     // Fetch shows list and find match
     const shows = await fetchShowsList();
     const match = findBestMatch(animeTitle, shows);
+
+    // print shows list for debugging
+    console.log('Shows list:', shows);
 
     if (!match) {
       console.log(`No match found for "${animeTitle}"`);

@@ -12,6 +12,9 @@
     "default_popup": "popup.html",
     "default_title": "Filler Skip"
   },
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["*://*.crunchyroll.com/*"],
